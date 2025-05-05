@@ -1,41 +1,56 @@
-from flask import Flask, request
+from flask import Flask, request, Response
 from twilio.twiml.voice_response import VoiceResponse
 import openai
+import boto3
 import os
+import uuid
 
 app = Flask(__name__)
+
+# Load your API keys (use environment variables or secure config for deployment)
 openai.api_key = os.getenv("OPENAI_API_KEY")
+polly = boto3.client(
+    "polly",
+    region_name="us-east-1",
+    aws_access_key_id=os.getenv("AWS_ACCESS_KEY"),
+    aws_secret_access_key=os.getenv("AWS_SECRET_KEY")
+)
+
+# Save synthesized speech to file
+def synthesize_speech(text):
+    response = polly.synthesize_speech(
+        Text=text,
+        OutputFormat="mp3",
+        VoiceId="Joanna"
+    )
+    filename = f"/tmp/{uuid.uuid4()}.mp3"
+    with open(filename, "wb") as f:
+        f.write(response["AudioStream"].read())
+    return filename
+
+# Get GPT-4 response
+def generate_gpt_response(prompt):
+    messages = [{"role": "system", "content": "You are a helpful, natural-sounding assistant."},
+                {"role": "user", "content": prompt}]
+    response = openai.ChatCompletion.create(
+        model="gpt-4",
+        messages=messages,
+        temperature=0.7
+    )
+    return response.choices[0].message["content"]
 
 @app.route("/voice", methods=["POST"])
 def voice():
-    speech = request.form.get("SpeechResult", "").strip()
-    resp = VoiceResponse()
+    prompt = request.form.get("SpeechResult", "")
+    if not prompt:
+        prompt = "Sorry, I didn’t catch that. Could you repeat?"
 
-    if not speech:
-        gather = resp.gather(
-            input="speech",
-            timeout=5,
-            speech_timeout="auto",
-            action="/voice",
-            method="POST"
-        )
-        gather.say("Hi there! Go ahead, I'm listening.", voice="Polly.Joanna", language="en-US")
-        return str(resp)
+    gpt_reply = generate_gpt_response(prompt)
 
-    try:
-        gpt_reply = openai.ChatCompletion.create(
-            model="gpt-4",
-            messages=[
-                {"role": "system", "content": "You are a warm, friendly, human-sounding AI assistant for SwiftCore. Keep your responses short, helpful, and natural."},
-                {"role": "user", "content": speech}
-            ]
-        )
-        reply = gpt_reply['choices'][0]['message']['content']
-    except Exception as e:
-        reply = "Sorry, I’m having trouble understanding you right now. Please try again later."
+    # Convert GPT reply to TwiML (text-to-speech with Polly voice)
+    response = VoiceResponse()
+    response.say(gpt_reply, voice="Polly.Joanna", language="en-US")
+    return Response(str(response), mimetype="application/xml")
 
-    resp.say(reply, voice="Polly.Joanna", language="en-US")
-    resp.pause(length=1)
-    resp.redirect("/voice")  # allows follow-up question
-
-    return str(resp)
+if __name__ == "__main__":
+    app.run(debug=True)
