@@ -1,5 +1,5 @@
 from flask import Flask, request
-from twilio.twiml.voice_response import VoiceResponse
+from twilio.twiml.voice_response import VoiceResponse, Gather
 import openai
 import os
 
@@ -12,7 +12,10 @@ def voice():
     resp = VoiceResponse()
 
     if not speech:
-        resp.say("I didn’t catch that. Could you say that again?", voice="Polly.Joanna")
+        gather = Gather(input="speech", action="/voice", method="POST", timeout=3)
+        gather.say("Hi there! How can I help you today?", voice="Polly.Joanna")
+        resp.append(gather)
+        resp.say("I didn’t catch that. Let’s try again.", voice="Polly.Joanna")
         resp.redirect("/voice")
         return str(resp)
 
@@ -20,24 +23,24 @@ def voice():
         gpt_reply = openai.ChatCompletion.create(
             model="gpt-4",
             messages=[
-                {"role": "system", "content": "You are a friendly and professional AI phone assistant that helps customers with their questions."},
+                {"role": "system", "content": "You are a helpful, friendly phone assistant."},
                 {"role": "user", "content": speech}
             ]
         )
         reply = gpt_reply["choices"][0]["message"]["content"]
 
-        resp.say(reply, voice="Polly.Joanna")  # Use a more natural-sounding voice
-        resp.pause(length=1)
-        resp.redirect("/voice")
+        gather = Gather(input="speech", action="/voice", method="POST", timeout=3)
+        gather.say(reply, voice="Polly.Joanna")
+        resp.append(gather)
         return str(resp)
 
     except Exception as e:
-        resp.say("I'm sorry, something went wrong. Please try again later.", voice="Polly.Joanna")
+        resp.say("Oops. Something went wrong. Try again later.", voice="Polly.Joanna")
         return str(resp)
 
 @app.route("/", methods=["GET"])
 def home():
-    return "Voice assistant is live."
+    return "Voice assistant running."
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
