@@ -8,27 +8,34 @@ openai.api_key = os.getenv("OPENAI_API_KEY")
 
 @app.route("/voice", methods=["POST"])
 def voice():
-    user_input = request.form.get("SpeechResult", "")
-    response = VoiceResponse()
+    speech = request.form.get("SpeechResult", "").strip()
+    resp = VoiceResponse()
 
-    if not user_input:
-        response.say("I didn’t catch that. Could you please repeat?", voice="alice")
-        response.redirect("/voice")
-        return str(response)
+    if not speech:
+        gather = resp.gather(
+            input="speech",
+            timeout=5,
+            speech_timeout="auto",
+            action="/voice",
+            method="POST"
+        )
+        gather.say("Hi there! Go ahead, I'm listening.", voice="Polly.Joanna", language="en-US")
+        return str(resp)
 
-    chat = openai.ChatCompletion.create(
-        model="gpt-4",
-        messages=[
-            {"role": "system", "content": "You are SwiftCore Solutions' AI voice assistant. Answer as if you're helping a customer calling the business."},
-            {"role": "user", "content": user_input}
-        ]
-    )
+    try:
+        gpt_reply = openai.ChatCompletion.create(
+            model="gpt-4",
+            messages=[
+                {"role": "system", "content": "You are a warm, friendly, human-sounding AI assistant for SwiftCore. Keep your responses short, helpful, and natural."},
+                {"role": "user", "content": speech}
+            ]
+        )
+        reply = gpt_reply['choices'][0]['message']['content']
+    except Exception as e:
+        reply = "Sorry, I’m having trouble understanding you right now. Please try again later."
 
-    bot_reply = chat['choices'][0]['message']['content']
-    response.say(bot_reply, voice="alice")
-    response.redirect("/voice")
-    return str(response)
+    resp.say(reply, voice="Polly.Joanna", language="en-US")
+    resp.pause(length=1)
+    resp.redirect("/voice")  # allows follow-up question
 
-@app.route("/")
-def home():
-    return "SwiftCore Voice AI is live."
+    return str(resp)
