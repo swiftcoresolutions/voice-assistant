@@ -1,19 +1,34 @@
 from flask import Flask, request
 from twilio.twiml.voice_response import VoiceResponse
+import openai
+import os
 
 app = Flask(__name__)
+openai.api_key = os.getenv("OPENAI_API_KEY")
 
 @app.route("/voice", methods=["POST"])
 def voice():
-    resp = VoiceResponse()
-    resp.say("Hey! This is SwiftCore’s AI Assistant test run. If you can hear me, the call setup is working!", voice="alice")
-    return str(resp)
+    user_input = request.form.get("SpeechResult", "")
+    response = VoiceResponse()
+
+    if not user_input:
+        response.say("I didn’t catch that. Could you please repeat?", voice="alice")
+        response.redirect("/voice")
+        return str(response)
+
+    chat = openai.ChatCompletion.create(
+        model="gpt-4",
+        messages=[
+            {"role": "system", "content": "You are SwiftCore Solutions' AI voice assistant. Answer as if you're helping a customer calling the business."},
+            {"role": "user", "content": user_input}
+        ]
+    )
+
+    bot_reply = chat['choices'][0]['message']['content']
+    response.say(bot_reply, voice="alice")
+    response.redirect("/voice")
+    return str(response)
 
 @app.route("/")
 def home():
-    return "SwiftCore Voice Assistant is live."
-
-if __name__ == "__main__":
-    import os
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    return "SwiftCore Voice AI is live."
