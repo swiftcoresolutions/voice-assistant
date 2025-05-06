@@ -1,5 +1,5 @@
-flask
-twilio
-gunicorn
+Flask
 openai
-boto3
+requests
+python-dotenv
+twilio
