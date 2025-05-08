@@ -43,7 +43,7 @@ response = client.chat.completions.create(
 )
 ai_reply = response.choices[0].message.content
 
-    # Generate MP3 via ElevenLabs
+     # Generate MP3 via ElevenLabs
     mp3_filename = f"{uuid.uuid4().hex}.mp3"
     mp3_path = os.path.join("static", mp3_filename)
 
@@ -51,6 +51,7 @@ ai_reply = response.choices[0].message.content
         "xi-api-key": ELEVENLABS_API_KEY,
         "Content-Type": "application/json"
     }
+
     payload = {
         "text": ai_reply,
         "voice_settings": {
@@ -59,6 +60,14 @@ ai_reply = response.choices[0].message.content
         }
     }
 
+    eleven_url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}/stream"
+    response = requests.post(eleven_url, headers=headers, json=payload)
+
+    if response.status_code != 200:
+        raise Exception("Failed to generate ElevenLabs audio.")
+
+    with open(mp3_path, "wb") as f:
+        f.write(response.content)
     eleven_url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}/stream"
     response = requests.post(eleven_url, headers=headers, json=payload)
 
