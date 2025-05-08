@@ -1,82 +1,74 @@
 from flask import Flask, request, send_from_directory
-from twilio.twiml.voice_response import VoiceResponse
-import openai
+from twilio.twiml.voice_response import VoiceResponse, Gather, Play
 import os
+import openai
 import requests
-import uuid
 
 app = Flask(__name__)
 
-# Load API keys from environment
+# Load secrets
 openai.api_key = os.getenv("OPENAI_API_KEY")
 ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY")
 ELEVENLABS_VOICE_ID = os.getenv("ELEVENLABS_VOICE_ID")
 HOSTNAME = os.getenv("RENDER_EXTERNAL_HOSTNAME")
 
-# Voice route
+# ========== 1. Initial voice route ==========
 @app.route("/voice", methods=["POST"])
 def voice():
-    speech_text = request.form.get("SpeechResult", "")
-    if not speech_text:
-        resp = VoiceResponse()
-        resp.say("Sorry, I didn’t catch that.")
-        return str(resp)
-
-    print("Caller said:", speech_text)
-
-    # Step 1: Get OpenAI response
-    reply = get_openai_response(speech_text)
-
-    # Step 2: Convert to speech with ElevenLabs
-    audio_file = generate_elevenlabs_mp3(reply)
-
-    # Step 3: Return TwiML that plays the audio file
     resp = VoiceResponse()
-    resp.play(f"{HOSTNAME}/static/{audio_file}")
+    gather = Gather(input="speech", action="/voice-response", method="POST")
+    gather.play(f"{HOSTNAME}/static/greeting.mp3")
+    resp.append(gather)
+    resp.say("Sorry, I didn't hear anything. Goodbye.", voice="alice")
     return str(resp)
 
-# Serve MP3s from static folder
-@app.route("/static/<path:filename>")
-def serve_static(filename):
-    return send_from_directory("static", filename)
+# ========== 2. After user speaks ==========
+@app.route("/voice-response", methods=["POST"])
+def voice_response():
+    user_input = request.form.get("SpeechResult", "")
+    if not user_input:
+        resp = VoiceResponse()
+        resp.say("Sorry, I didn't catch that. Goodbye.", voice="alice")
+        return str(resp)
 
-# Optional root
-@app.route("/")
-def index():
-    return "Voice assistant is live!"
-
-# Generate AI response
-def get_openai_response(prompt):
-    response = openai.ChatCompletion.create(
+    # Get OpenAI response
+    ai_reply = openai.ChatCompletion.create(
         model="gpt-4",
         messages=[
-            {"role": "system", "content": "You're a helpful and professional customer service assistant for SwiftCore Solutions."},
-            {"role": "user", "content": prompt}
+            {"role": "system", "content": "You're a helpful AI assistant for SwiftCore Solutions."},
+            {"role": "user", "content": user_input}
         ]
-    )
-    return response.choices[0].message["content"]
+    )["choices"][0]["message"]["content"]
 
-# Convert reply to MP3
-def generate_elevenlabs_mp3(text):
-    filename = f"{uuid.uuid4().hex}.mp3"
-    filepath = os.path.join("static", filename)
-
-    url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}"
+    # Get ElevenLabs MP3
+    eleven_url = f"https://api.elevenlabs.io/v1/text-to-speech/{ELEVENLABS_VOICE_ID}"
     headers = {
         "xi-api-key": ELEVENLABS_API_KEY,
         "Content-Type": "application/json"
     }
-    data = {
-        "text": text,
-        "model_id": "eleven_monolingual_v1",
-        "voice_settings": {"stability": 0.4, "similarity_boost": 0.75}
+    payload = {
+        "text": ai_reply,
+        "voice_settings": {"stability": 0.5, "similarity_boost": 0.75}
     }
 
-    response = requests.post(url, headers=headers, json=data)
-    with open(filepath, "wb") as f:
-        f.write(response.content)
+    audio = requests.post(eleven_url, headers=headers, json=payload)
+    with open("static/response.mp3", "wb") as f:
+        f.write(audio.content)
 
-    return filename
+    # Return TwiML to play the MP3
+    resp = VoiceResponse()
+    resp.play(f"{HOSTNAME}/static/response.mp3")
+    return str(resp)
+
+# ========== 3. Serve MP3s ==========
+@app.route("/static/<path:filename>")
+def static_files(filename):
+    return send_from_directory("static", filename)
+
+# ========== 4. Root ==========
+@app.route("/")
+def index():
+    return "SwiftCore Voice Assistant is live!"
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
