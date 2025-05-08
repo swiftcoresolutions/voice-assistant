@@ -4,23 +4,20 @@ import os
 
 app = Flask(__name__)
 
-# Voice route for Twilio webhook
+# Route that Twilio hits when a call comes in
 @app.route("/voice", methods=["POST"])
 def voice():
     resp = VoiceResponse()
-    
-    # Play static ElevenLabs MP3 greeting
     greeting_url = f"{os.environ['RENDER_EXTERNAL_HOSTNAME']}/static/greeting.mp3"
     resp.play(greeting_url)
-
     return str(resp)
 
-# Serve static MP3 files
+# Serve MP3 file
 @app.route("/static/<path:filename>")
 def static_files(filename):
     return send_from_directory("static", filename)
 
-# Root route for verification
+# Root page for browser testing
 @app.route("/")
 def index():
     return "Voice assistant is live!"
